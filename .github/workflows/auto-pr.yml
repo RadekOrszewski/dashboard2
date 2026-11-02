@@ -13,6 +13,7 @@ jobs:
   auto-pr:
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/checkout@v4
       - name: Create PR and enable auto-merge
         env:
           GH_TOKEN: ${{ secrets.AUTO_PR_TOKEN || github.token }}
@@ -25,4 +26,4 @@ jobs:
               --title "$(gh api repos/$REPO/commits/$BRANCH --jq '.commit.message' | head -n1)" \
               --body "Automatycznie utworzony PR z gałęzi \`$BRANCH\`."
           fi
-          gh pr merge --repo "$REPO" "$BRANCH" --squash --auto --delete-branch
+          gh pr merge --repo "$REPO" "$BRANCH" --squash --auto
