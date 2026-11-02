@@ -1,1 +1,516 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Dashboard czasów realizacji</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns@3.0.0/dist/chartjs-adapter-date-fns.bundle.min.js"></script>
+<style>
+  :root{
+    --bg:#0f1116;
+    --panel:#1a1d26;
+    --panel2:#20232e;
+    --border:#2e3240;
+    --text:#e6e6e6;
+    --muted:#9aa0ac;
+    --accent:#6ea8fe;
+    --s-color:#5ecb8c;
+    --m-color:#f2c94c;
+    --l-color:#eb5757;
+    --outlier:#555b6e;
+    --p50:#6ea8fe;
+    --p85:#c77dff;
+    --p95:#ff7eb6;
+  }
+  *{box-sizing:border-box;}
+  body{
+    margin:0;
+    font-family:-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;
+    background:var(--bg);
+    color:var(--text);
+    min-height:100vh;
+  }
+  header{
+    padding:24px 32px 12px;
+    border-bottom:1px solid var(--border);
+  }
+  header h1{margin:0 0 4px;font-size:22px;font-weight:600;}
+  header p{margin:0;color:var(--muted);font-size:13px;}
+  .container{
+    max-width:1200px;
+    margin:0 auto;
+    padding:24px 32px 60px;
+  }
+  .toolbar{
+    display:flex;
+    flex-wrap:wrap;
+    gap:16px;
+    align-items:center;
+    justify-content:space-between;
+    background:var(--panel);
+    border:1px solid var(--border);
+    border-radius:10px;
+    padding:16px 20px;
+    margin-bottom:20px;
+  }
+  .filters{
+    display:flex;
+    gap:10px;
+    align-items:center;
+    flex-wrap:wrap;
+  }
+  .filters span.label{color:var(--muted);font-size:13px;margin-right:4px;}
+  .chip{
+    border:1px solid var(--border);
+    background:var(--panel2);
+    color:var(--text);
+    padding:6px 14px;
+    border-radius:20px;
+    cursor:pointer;
+    font-size:13px;
+    display:flex;
+    align-items:center;
+    gap:6px;
+    user-select:none;
+    transition:all .15s;
+  }
+  .chip.active{border-color:var(--accent);box-shadow:0 0 0 1px var(--accent) inset;}
+  .chip .dot{width:9px;height:9px;border-radius:50%;display:inline-block;}
+  .btn{
+    border:1px solid var(--border);
+    background:var(--panel2);
+    color:var(--text);
+    padding:8px 16px;
+    border-radius:8px;
+    cursor:pointer;
+    font-size:13px;
+    transition:background .15s;
+  }
+  .btn:hover{background:#262a36;}
+  .btn.primary{background:var(--accent);color:#0f1116;border-color:var(--accent);font-weight:600;}
+  .btn.primary:hover{opacity:.9;}
+  .panel{
+    background:var(--panel);
+    border:1px solid var(--border);
+    border-radius:10px;
+    padding:20px;
+    margin-bottom:20px;
+  }
+  .panel h2{margin:0 0 14px;font-size:15px;color:var(--muted);font-weight:600;text-transform:uppercase;letter-spacing:.04em;}
+  .chart-wrap{position:relative;height:460px;}
+  .stats{
+    display:grid;
+    grid-template-columns:repeat(auto-fit,minmax(140px,1fr));
+    gap:14px;
+    margin-top:16px;
+  }
+  .stat-card{
+    background:var(--panel2);
+    border:1px solid var(--border);
+    border-radius:8px;
+    padding:14px 16px;
+  }
+  .stat-card .k{color:var(--muted);font-size:12px;margin-bottom:4px;}
+  .stat-card .v{font-size:20px;font-weight:700;}
+  .legend-line{
+    display:flex;
+    gap:18px;
+    flex-wrap:wrap;
+    margin-top:10px;
+    font-size:12px;
+    color:var(--muted);
+  }
+  .legend-line .item{display:flex;align-items:center;gap:6px;}
+  .legend-line .swatch{width:20px;height:0;border-top:2px dashed;}
+  .hint{color:var(--muted);font-size:12px;margin-top:10px;}
+  form.add-form{
+    display:flex;
+    gap:12px;
+    flex-wrap:wrap;
+    align-items:flex-end;
+  }
+  .field{display:flex;flex-direction:column;gap:6px;}
+  .field label{font-size:12px;color:var(--muted);}
+  .field input, .field select{
+    background:var(--panel2);
+    border:1px solid var(--border);
+    color:var(--text);
+    padding:8px 10px;
+    border-radius:6px;
+    font-size:13px;
+    min-width:140px;
+  }
+  table{
+    width:100%;
+    border-collapse:collapse;
+    font-size:13px;
+    margin-top:8px;
+  }
+  th,td{
+    text-align:left;
+    padding:8px 10px;
+    border-bottom:1px solid var(--border);
+  }
+  th{color:var(--muted);font-weight:600;font-size:12px;text-transform:uppercase;}
+  tr.outlier-row{opacity:.45;}
+  tr:hover{background:var(--panel2);}
+  .size-badge{
+    display:inline-flex;
+    align-items:center;
+    gap:6px;
+    padding:2px 8px;
+    border-radius:12px;
+    background:#00000040;
+    font-weight:600;
+    font-size:12px;
+  }
+  .size-badge .dot{width:8px;height:8px;border-radius:50%;}
+  .row-btn{
+    border:1px solid var(--border);
+    background:transparent;
+    color:var(--muted);
+    border-radius:6px;
+    padding:3px 8px;
+    cursor:pointer;
+    font-size:12px;
+  }
+  .row-btn:hover{color:var(--text);border-color:var(--accent);}
+  .table-wrap{max-height:320px;overflow:auto;}
+  footer{text-align:center;color:var(--muted);font-size:12px;padding:20px;}
+  a{color:var(--accent);}
+</style>
+</head>
+<body>
 
+<header>
+  <h1>📊 Dashboard czasów realizacji (Lead Time)</h1>
+  <p>Scatterplot elementów S / M / L z prognozami percentylowymi (50 / 85 / 95). Kliknij punkt, aby oznaczyć go jako odstający (outlier).</p>
+</header>
+
+<div class="container">
+
+  <div class="toolbar">
+    <div class="filters">
+      <span class="label">Filtruj rozmiar:</span>
+      <div class="chip active" data-size="S"><span class="dot" style="background:var(--s-color)"></span>S</div>
+      <div class="chip active" data-size="M"><span class="dot" style="background:var(--m-color)"></span>M</div>
+      <div class="chip active" data-size="L"><span class="dot" style="background:var(--l-color)"></span>L</div>
+    </div>
+    <div style="display:flex;gap:10px;">
+      <button class="btn" id="resetOutliers">Przywróć wszystkie outliery</button>
+      <button class="btn" id="resetData">Reset danych do oryginału</button>
+    </div>
+  </div>
+
+  <div class="panel">
+    <h2>Rozkład czasów realizacji</h2>
+    <div class="chart-wrap"><canvas id="scatterChart"></canvas></div>
+    <div class="legend-line">
+      <div class="item"><span class="swatch" style="border-color:var(--p50)"></span>P50: <span id="p50val">-</span> dni</div>
+      <div class="item"><span class="swatch" style="border-color:var(--p85)"></span>P85: <span id="p85val">-</span> dni</div>
+      <div class="item"><span class="swatch" style="border-color:var(--p95)"></span>P95: <span id="p95val">-</span> dni</div>
+    </div>
+    <div class="hint">Kliknij kropkę, aby ją usunąć (oznaczyć jako outlier) lub ponownie kliknąć, by przywrócić. Punkty wyszarzone/pominięte nie wchodzą do przeliczenia percentyli.</div>
+    <div class="stats" id="statsGrid"></div>
+  </div>
+
+  <div class="panel">
+    <h2>Dodaj nowy punkt danych</h2>
+    <form class="add-form" id="addForm">
+      <div class="field">
+        <label for="newSize">Rozmiar</label>
+        <select id="newSize" required>
+          <option value="S">S</option>
+          <option value="M">M</option>
+          <option value="L">L</option>
+        </select>
+      </div>
+      <div class="field">
+        <label for="newLeadTime">Czas realizacji (dni)</label>
+        <input type="number" id="newLeadTime" min="0" step="1" required placeholder="np. 42">
+      </div>
+      <div class="field">
+        <label for="newDate">Data ukończenia</label>
+        <input type="date" id="newDate" required>
+      </div>
+      <button type="submit" class="btn primary">Dodaj punkt</button>
+    </form>
+  </div>
+
+  <div class="panel">
+    <h2>Dane (<span id="rowCount">0</span>)</h2>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr><th>Data ukończenia</th><th>Rozmiar</th><th>Czas realizacji (dni)</th><th>Status</th><th></th></tr>
+        </thead>
+        <tbody id="dataTableBody"></tbody>
+      </table>
+    </div>
+  </div>
+
+</div>
+
+<footer>Dane źródłowe: "Lead Times - 2024-25.xlsx" · Dashboard generowany statycznie, hostowany na GitHub Pages.</footer>
+
+<script>
+const RAW_DATA = [{"date": "2024-07-15", "size": "S", "leadTime": 49.0}, {"date": "2024-08-22", "size": "S", "leadTime": 48.0}, {"date": "2024-09-10", "size": "S", "leadTime": 87.0}, {"date": "2024-09-25", "size": "M", "leadTime": 57.0}, {"date": "2024-10-05", "size": "M", "leadTime": 148.0}, {"date": "2024-10-14", "size": "S", "leadTime": 53.0}, {"date": "2024-10-28", "size": "S", "leadTime": 45.0}, {"date": "2024-11-18", "size": "M", "leadTime": 145.0}, {"date": "2024-12-04", "size": "L", "leadTime": 105.0}, {"date": "2025-01-08", "size": "S", "leadTime": 5.0}, {"date": "2025-01-20", "size": "L", "leadTime": 163.0}, {"date": "2025-02-14", "size": "S", "leadTime": 43.0}, {"date": "2025-02-26", "size": "M", "leadTime": 415.0}, {"date": "2025-03-15", "size": "L", "leadTime": 123.0}, {"date": "2025-04-10", "size": "M", "leadTime": 103.0}, {"date": "2025-05-05", "size": "L", "leadTime": 104.0}, {"date": "2025-06-12", "size": "L", "leadTime": 302.0}, {"date": "2025-06-25", "size": "L", "leadTime": 158.0}, {"date": "2025-07-02", "size": "L", "leadTime": 98.0}, {"date": "2025-07-11", "size": "S", "leadTime": 52.0}, {"date": "2025-07-18", "size": "M", "leadTime": 95.0}, {"date": "2025-07-29", "size": "S", "leadTime": 70.0}, {"date": "2025-08-03", "size": "M", "leadTime": 95.0}, {"date": "2025-08-14", "size": "M", "leadTime": 101.0}, {"date": "2025-08-21", "size": "M", "leadTime": 57.0}, {"date": "2025-08-29", "size": "M", "leadTime": 57.0}, {"date": "2025-09-08", "size": "S", "leadTime": 53.0}, {"date": "2025-09-22", "size": "L", "leadTime": 137.0}, {"date": "2025-10-04", "size": "S", "leadTime": 73.0}, {"date": "2025-10-12", "size": "M", "leadTime": 60.0}, {"date": "2025-10-19", "size": "S", "leadTime": 126.0}, {"date": "2025-10-27", "size": "M", "leadTime": 57.0}, {"date": "2025-11-05", "size": "L", "leadTime": 124.0}, {"date": "2025-11-15", "size": "M", "leadTime": 75.0}, {"date": "2025-11-25", "size": "M", "leadTime": 89.0}, {"date": "2025-12-10", "size": "S", "leadTime": 44.0}];
+
+const STORAGE_KEY = 'leadTimeDashboard_v1';
+
+const COLORS = { S: '#5ecb8c', M: '#f2c94c', L: '#eb5757', outlier: '#555b6e' };
+
+let state = loadState();
+
+function loadState(){
+  const saved = localStorage.getItem(STORAGE_KEY);
+  if(saved){
+    try{
+      const parsed = JSON.parse(saved);
+      if(Array.isArray(parsed.points)) return parsed;
+    }catch(e){}
+  }
+  return { points: RAW_DATA.map((d,i)=>({ id:i+1, date:d.date, size:d.size, leadTime:d.leadTime, outlier:false })) };
+}
+
+function saveState(){
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+}
+
+let nextId = Math.max(0, ...state.points.map(p=>p.id)) + 1;
+
+let activeSizes = new Set(['S','M','L']);
+
+function percentile(arr, p){
+  if(arr.length === 0) return null;
+  const sorted = [...arr].sort((a,b)=>a-b);
+  const idx = (p/100) * (sorted.length - 1);
+  const lo = Math.floor(idx), hi = Math.ceil(idx);
+  if(lo === hi) return sorted[lo];
+  return sorted[lo] + (sorted[hi]-sorted[lo]) * (idx-lo);
+}
+
+let chart;
+
+function getVisiblePoints(){
+  return state.points.filter(p => activeSizes.has(p.size));
+}
+
+function getActivePoints(){
+  return getVisiblePoints().filter(p => !p.outlier);
+}
+
+function buildDatasets(){
+  const visible = getVisiblePoints();
+  const bySize = { S: [], M: [], L: [] };
+  visible.forEach(p=>{
+    bySize[p.size].push({
+      x: p.date,
+      y: p.leadTime,
+      _id: p.id,
+      _outlier: p.outlier
+    });
+  });
+  return ['S','M','L'].filter(s=>activeSizes.has(s)).map(size => ({
+    label: size,
+    data: bySize[size],
+    pointBackgroundColor: bySize[size].map(pt => pt._outlier ? COLORS.outlier : COLORS[size]),
+    pointBorderColor: bySize[size].map(pt => pt._outlier ? '#333' : COLORS[size]),
+    pointRadius: bySize[size].map(pt => pt._outlier ? 5 : 6),
+    pointStyle: bySize[size].map(pt => pt._outlier ? 'crossRot' : 'circle'),
+    showLine: false,
+    backgroundColor: COLORS[size],
+    borderColor: COLORS[size],
+  }));
+}
+
+function percentileLinePlugin(){
+  return {
+    id: 'percentileLines',
+    afterDraw(chart){
+      const active = getActivePoints().map(p=>p.leadTime);
+      if(active.length === 0) return;
+      const p50 = percentile(active,50);
+      const p85 = percentile(active,85);
+      const p95 = percentile(active,95);
+      const yScale = chart.scales.y;
+      const xScale = chart.scales.x;
+      const ctx = chart.ctx;
+      const lines = [
+        {val:p50, color: getComputedStyle(document.documentElement).getPropertyValue('--p50').trim(), label:'P50'},
+        {val:p85, color: getComputedStyle(document.documentElement).getPropertyValue('--p85').trim(), label:'P85'},
+        {val:p95, color: getComputedStyle(document.documentElement).getPropertyValue('--p95').trim(), label:'P95'},
+      ];
+      ctx.save();
+      lines.forEach(line=>{
+        if(line.val == null) return;
+        const y = yScale.getPixelForValue(line.val);
+        ctx.beginPath();
+        ctx.setLineDash([6,5]);
+        ctx.strokeStyle = line.color;
+        ctx.lineWidth = 1.5;
+        ctx.moveTo(xScale.left, y);
+        ctx.lineTo(xScale.right, y);
+        ctx.stroke();
+        ctx.setLineDash([]);
+        ctx.fillStyle = line.color;
+        ctx.font = '11px sans-serif';
+        ctx.fillText(`${line.label}: ${line.val.toFixed(0)}d`, xScale.right - 90, y - 4);
+      });
+      ctx.restore();
+    }
+  };
+}
+
+function initChart(){
+  const ctx = document.getElementById('scatterChart').getContext('2d');
+  chart = new Chart(ctx, {
+    type: 'scatter',
+    data: { datasets: buildDatasets() },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      onClick: (evt, elements) => {
+        if(elements.length === 0) return;
+        const el = elements[0];
+        const ds = chart.data.datasets[el.datasetIndex];
+        const point = ds.data[el.index];
+        toggleOutlier(point._id);
+      },
+      scales: {
+        x: {
+          type: 'time',
+          time: { unit: 'month', tooltipFormat: 'dd.MM.yyyy' },
+          title: { display:true, text:'Data ukończenia', color:'#9aa0ac' },
+          ticks:{ color:'#9aa0ac' },
+          grid:{ color:'#2e3240' }
+        },
+        y: {
+          title: { display:true, text:'Czas realizacji (dni)', color:'#9aa0ac' },
+          beginAtZero:true,
+          ticks:{ color:'#9aa0ac' },
+          grid:{ color:'#2e3240' }
+        }
+      },
+      plugins: {
+        legend: {
+          labels:{ color:'#e6e6e6' }
+        },
+        tooltip: {
+          callbacks: {
+            label: (ctx) => {
+              const p = ctx.raw;
+              const status = p._outlier ? ' (outlier)' : '';
+              return `${ctx.dataset.label}: ${p.y} dni${status}`;
+            }
+          }
+        }
+      }
+    },
+    plugins: [percentileLinePlugin()]
+  });
+}
+
+function toggleOutlier(id){
+  const p = state.points.find(pt=>pt.id===id);
+  if(!p) return;
+  p.outlier = !p.outlier;
+  saveState();
+  refreshAll();
+}
+
+function refreshChart(){
+  chart.data.datasets = buildDatasets();
+  chart.update();
+}
+
+function refreshStats(){
+  const active = getActivePoints().map(p=>p.leadTime);
+  const p50 = percentile(active,50);
+  const p85 = percentile(active,85);
+  const p95 = percentile(active,95);
+  document.getElementById('p50val').textContent = p50!=null ? p50.toFixed(1) : '-';
+  document.getElementById('p85val').textContent = p85!=null ? p85.toFixed(1) : '-';
+  document.getElementById('p95val').textContent = p95!=null ? p95.toFixed(1) : '-';
+
+  const visible = getVisiblePoints();
+  const outliersCount = visible.filter(p=>p.outlier).length;
+  const grid = document.getElementById('statsGrid');
+  grid.innerHTML = `
+    <div class="stat-card"><div class="k">Liczba elementów (widoczne)</div><div class="v">${visible.length}</div></div>
+    <div class="stat-card"><div class="k">Aktywne (bez outlierów)</div><div class="v">${active.length}</div></div>
+    <div class="stat-card"><div class="k">Outliery</div><div class="v">${outliersCount}</div></div>
+    <div class="stat-card"><div class="k">Średnia (aktywne)</div><div class="v">${active.length? (active.reduce((a,b)=>a+b,0)/active.length).toFixed(1):'-'}</div></div>
+  `;
+}
+
+function refreshTable(){
+  const tbody = document.getElementById('dataTableBody');
+  const sorted = [...state.points].sort((a,b)=> a.date < b.date ? 1 : -1);
+  document.getElementById('rowCount').textContent = state.points.length;
+  tbody.innerHTML = sorted.map(p=>`
+    <tr class="${p.outlier ? 'outlier-row':''}">
+      <td>${p.date}</td>
+      <td><span class="size-badge"><span class="dot" style="background:${COLORS[p.size]}"></span>${p.size}</span></td>
+      <td>${p.leadTime}</td>
+      <td>${p.outlier ? 'Outlier' : 'Aktywny'}</td>
+      <td>
+        <button class="row-btn" onclick="toggleOutlier(${p.id})">${p.outlier ? 'Przywróć' : 'Usuń'}</button>
+      </td>
+    </tr>
+  `).join('');
+}
+
+function refreshAll(){
+  refreshChart();
+  refreshStats();
+  refreshTable();
+}
+
+document.querySelectorAll('.chip').forEach(chip=>{
+  chip.addEventListener('click', ()=>{
+    const size = chip.dataset.size;
+    if(activeSizes.has(size)){
+      activeSizes.delete(size);
+      chip.classList.remove('active');
+    } else {
+      activeSizes.add(size);
+      chip.classList.add('active');
+    }
+    refreshAll();
+  });
+});
+
+document.getElementById('resetOutliers').addEventListener('click', ()=>{
+  state.points.forEach(p=>p.outlier=false);
+  saveState();
+  refreshAll();
+});
+
+document.getElementById('resetData').addEventListener('click', ()=>{
+  if(!confirm('Przywrócić oryginalne dane z pliku źródłowego? Dodane punkty i zmiany outlierów zostaną utracone.')) return;
+  state = { points: RAW_DATA.map((d,i)=>({ id:i+1, date:d.date, size:d.size, leadTime:d.leadTime, outlier:false })) };
+  nextId = state.points.length + 1;
+  saveState();
+  refreshAll();
+});
+
+document.getElementById('addForm').addEventListener('submit', (e)=>{
+  e.preventDefault();
+  const size = document.getElementById('newSize').value;
+  const leadTime = parseFloat(document.getElementById('newLeadTime').value);
+  const date = document.getElementById('newDate').value;
+  if(!size || isNaN(leadTime) || !date) return;
+  state.points.push({ id: nextId++, date, size, leadTime, outlier:false });
+  saveState();
+  refreshAll();
+  e.target.reset();
+});
+
+initChart();
+refreshAll();
+</script>
+
+</body>
+</html>
