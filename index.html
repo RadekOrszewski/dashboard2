@@ -61,6 +61,21 @@
     flex-wrap:wrap;
   }
   .filters span.label{color:var(--muted);font-size:13px;margin-right:4px;}
+  .range-filter{
+    display:flex;
+    align-items:center;
+    gap:10px;
+    flex-wrap:wrap;
+  }
+  .range-filter input[type="range"]{
+    width:220px;
+    accent-color:var(--accent);
+  }
+  .range-filter .range-value{
+    font-size:13px;
+    color:var(--text);
+    min-width:150px;
+  }
   .chip{
     border:1px solid var(--border);
     background:var(--panel2);
@@ -197,6 +212,11 @@
       <div class="chip active" data-size="M"><span class="dot" style="background:var(--m-color)"></span>M</div>
       <div class="chip active" data-size="L"><span class="dot" style="background:var(--l-color)"></span>L</div>
     </div>
+    <div class="range-filter">
+      <span class="label">Zakres dat:</span>
+      <input type="range" id="dateRangeSlider" min="1" max="1" value="1" step="1">
+      <span class="range-value" id="dateRangeLabel">Cała historia</span>
+    </div>
     <div style="display:flex;gap:10px;">
       <button class="btn" id="resetOutliers">Przywróć wszystkie outliery</button>
       <button class="btn" id="resetData">Reset danych do oryginału</button>
@@ -282,6 +302,65 @@ let nextId = Math.max(0, ...state.points.map(p=>p.id)) + 1;
 
 let activeSizes = new Set(['S','M','L']);
 
+// --- Suwak zawężania zakresu dat (od całości do 1 miesiąca wstecz) ---
+let totalMonths = 1;
+let monthsBack = Infinity; // domyślnie "cała historia"; po pierwszej synchronizacji = totalMonths
+
+function getDateBounds(){
+  if(state.points.length === 0) return null;
+  const dates = state.points.map(p => new Date(p.date).getTime());
+  return { minDate: new Date(Math.min(...dates)), maxDate: new Date(Math.max(...dates)) };
+}
+
+function computeTotalMonths(){
+  const bounds = getDateBounds();
+  if(!bounds) return 1;
+  const { minDate, maxDate } = bounds;
+  const months = (maxDate.getFullYear()-minDate.getFullYear())*12 + (maxDate.getMonth()-minDate.getMonth()) + 1;
+  return Math.max(1, months);
+}
+
+function dateCutoffForMonthsBack(mBack){
+  const bounds = getDateBounds();
+  if(!bounds) return null;
+  const cutoff = new Date(bounds.maxDate);
+  cutoff.setMonth(cutoff.getMonth() - mBack);
+  return cutoff;
+}
+
+function monthsLabel(n){
+  if(n === 1) return '1 miesiąc';
+  if(n >= 2 && n <= 4) return `${n} miesiące`;
+  return `${n} miesięcy`;
+}
+
+function syncDateRangeSlider(){
+  totalMonths = computeTotalMonths();
+  const slider = document.getElementById('dateRangeSlider');
+  slider.min = 1;
+  slider.max = totalMonths;
+  // zachowaj dotychczasowe monthsBack, jeśli nadal mieści się w zakresie, inaczej pokaż całość
+  if(monthsBack > totalMonths || monthsBack < 1) monthsBack = totalMonths;
+  slider.value = totalMonths - monthsBack + 1;
+  updateDateRangeLabel();
+}
+
+function updateDateRangeLabel(){
+  const label = document.getElementById('dateRangeLabel');
+  if(monthsBack >= totalMonths){
+    label.textContent = `Cała historia (${monthsLabel(totalMonths)})`;
+  } else {
+    label.textContent = `Ostatni(e) ${monthsLabel(monthsBack)}`;
+  }
+}
+
+document.getElementById('dateRangeSlider').addEventListener('input', (e)=>{
+  const sliderValue = parseInt(e.target.value, 10);
+  monthsBack = totalMonths - sliderValue + 1;
+  updateDateRangeLabel();
+  refreshAll();
+});
+
 function percentile(arr, p){
   if(arr.length === 0) return null;
   const sorted = [...arr].sort((a,b)=>a-b);
@@ -294,7 +373,8 @@ function percentile(arr, p){
 let chart;
 
 function getVisiblePoints(){
-  return state.points.filter(p => activeSizes.has(p.size));
+  const cutoff = monthsBack < totalMonths ? dateCutoffForMonthsBack(monthsBack) : null;
+  return state.points.filter(p => activeSizes.has(p.size) && (!cutoff || new Date(p.date) >= cutoff));
 }
 
 function getActivePoints(){
@@ -493,6 +573,7 @@ document.getElementById('resetData').addEventListener('click', ()=>{
   state = { points: RAW_DATA.map((d,i)=>({ id:i+1, date:d.date, size:d.size, leadTime:d.leadTime, outlier:false })) };
   nextId = state.points.length + 1;
   saveState();
+  syncDateRangeSlider();
   refreshAll();
 });
 
@@ -504,10 +585,12 @@ document.getElementById('addForm').addEventListener('submit', (e)=>{
   if(!size || isNaN(leadTime) || !date) return;
   state.points.push({ id: nextId++, date, size, leadTime, outlier:false });
   saveState();
+  syncDateRangeSlider();
   refreshAll();
   e.target.reset();
 });
 
+syncDateRangeSlider();
 initChart();
 refreshAll();
 </script>
