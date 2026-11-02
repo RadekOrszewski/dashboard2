@@ -139,6 +139,20 @@
   .legend-line .item{display:flex;align-items:center;gap:6px;}
   .legend-line .swatch{width:20px;height:0;border-top:2px dashed;}
   .hint{color:var(--muted);font-size:12px;margin-top:10px;}
+  .tabs{display:flex;gap:8px;margin-top:14px;}
+  .tab-btn{
+    border:1px solid var(--border);
+    background:var(--panel2);
+    color:var(--muted);
+    padding:8px 18px;
+    border-radius:8px 8px 0 0;
+    cursor:pointer;
+    font-size:13px;
+    font-weight:600;
+  }
+  .tab-btn.active{background:var(--panel);color:var(--text);border-bottom-color:var(--panel);box-shadow:0 0 0 1px var(--accent) inset;}
+  .tab-panel{display:none;}
+  .tab-panel.active{display:block;}
   form.add-form{
     display:flex;
     gap:12px;
@@ -201,9 +215,15 @@
 <header>
   <h1>📊 Dashboard czasów realizacji (Lead Time)</h1>
   <p>Scatterplot elementów S / M / L z prognozami percentylowymi (50 / 85 / 95). Kliknij punkt, aby oznaczyć go jako odstający (outlier).</p>
+  <div class="tabs">
+    <button class="tab-btn active" data-tab="leadtime">Lead Time</button>
+    <button class="tab-btn" data-tab="throughput">Przepustowość (XmR)</button>
+  </div>
 </header>
 
 <div class="container">
+
+<div id="tab-leadtime" class="tab-panel active">
 
   <div class="toolbar">
     <div class="filters">
@@ -272,10 +292,53 @@
 
 </div>
 
-<footer>Dane źródłowe: "Lead Times - 2024-25.xlsx" · Dashboard generowany statycznie, hostowany na GitHub Pages.</footer>
+<div id="tab-throughput" class="tab-panel">
+
+  <div class="panel">
+    <h2>Wykres X — tempo dostarczania (tygodniowo)</h2>
+    <div class="chart-wrap" style="height:360px;"><canvas id="xChart"></canvas></div>
+    <div class="legend-line">
+      <div class="item"><span class="swatch" style="border-color:var(--p50)"></span>Średnia (CL): <span id="xCLval">-</span></div>
+      <div class="item"><span class="swatch" style="border-color:var(--l-color)"></span>UCL (+2,66×MR̄): <span id="xUCLval">-</span></div>
+      <div class="item"><span class="swatch" style="border-color:var(--s-color)"></span>LCL (−2,66×MR̄): <span id="xLCLval">-</span></div>
+    </div>
+    <div class="hint">Dane zagregowane tygodniowo (okresy 7-dniowe licząc od 07.01.2025). Ostatni, niepełny tydzień (15–19.04.2025, 5 dni) jest pominięty w obliczeniach.</div>
+  </div>
+
+  <div class="panel">
+    <h2>Wykres mR — rozstęp ruchomy</h2>
+    <div class="chart-wrap" style="height:360px;"><canvas id="mrChart"></canvas></div>
+    <div class="legend-line">
+      <div class="item"><span class="swatch" style="border-color:var(--p50)"></span>Średnia MR̄: <span id="mrCLval">-</span></div>
+      <div class="item"><span class="swatch" style="border-color:var(--l-color)"></span>UCL (+3,27×MR̄): <span id="mrUCLval">-</span></div>
+      <div class="item"><span class="swatch" style="border-color:var(--s-color)"></span>LCL (−3,27×MR̄, min. 0): <span id="mrLCLval">-</span></div>
+    </div>
+    <div class="hint">Rozstęp ruchomy (Moving Range) = |X<sub>i</sub> − X<sub>i-1</sub>| pomiędzy kolejnymi tygodniami.</div>
+  </div>
+
+  <div class="panel">
+    <h2>Dane tygodniowe</h2>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr><th>Tydzień od</th><th>Przepustowość (szt./tydz.)</th><th>Moving Range</th></tr>
+        </thead>
+        <tbody id="throughputTableBody"></tbody>
+      </table>
+    </div>
+  </div>
+
+</div>
+
+</div>
+
+<footer>Dane źródłowe: "Lead Times - 2024-25.xlsx", "Throughput Daily.xlsx" · Dashboard generowany statycznie, hostowany na GitHub Pages.</footer>
 
 <script>
 const RAW_DATA = [{"date": "2024-07-15", "size": "S", "leadTime": 49.0}, {"date": "2024-08-22", "size": "S", "leadTime": 48.0}, {"date": "2024-09-10", "size": "S", "leadTime": 87.0}, {"date": "2024-09-25", "size": "M", "leadTime": 57.0}, {"date": "2024-10-05", "size": "M", "leadTime": 148.0}, {"date": "2024-10-14", "size": "S", "leadTime": 53.0}, {"date": "2024-10-28", "size": "S", "leadTime": 45.0}, {"date": "2024-11-18", "size": "M", "leadTime": 145.0}, {"date": "2024-12-04", "size": "L", "leadTime": 105.0}, {"date": "2025-01-08", "size": "S", "leadTime": 5.0}, {"date": "2025-01-20", "size": "L", "leadTime": 163.0}, {"date": "2025-02-14", "size": "S", "leadTime": 43.0}, {"date": "2025-02-26", "size": "M", "leadTime": 415.0}, {"date": "2025-03-15", "size": "L", "leadTime": 123.0}, {"date": "2025-04-10", "size": "M", "leadTime": 103.0}, {"date": "2025-05-05", "size": "L", "leadTime": 104.0}, {"date": "2025-06-12", "size": "L", "leadTime": 302.0}, {"date": "2025-06-25", "size": "L", "leadTime": 158.0}, {"date": "2025-07-02", "size": "L", "leadTime": 98.0}, {"date": "2025-07-11", "size": "S", "leadTime": 52.0}, {"date": "2025-07-18", "size": "M", "leadTime": 95.0}, {"date": "2025-07-29", "size": "S", "leadTime": 70.0}, {"date": "2025-08-03", "size": "M", "leadTime": 95.0}, {"date": "2025-08-14", "size": "M", "leadTime": 101.0}, {"date": "2025-08-21", "size": "M", "leadTime": 57.0}, {"date": "2025-08-29", "size": "M", "leadTime": 57.0}, {"date": "2025-09-08", "size": "S", "leadTime": 53.0}, {"date": "2025-09-22", "size": "L", "leadTime": 137.0}, {"date": "2025-10-04", "size": "S", "leadTime": 73.0}, {"date": "2025-10-12", "size": "M", "leadTime": 60.0}, {"date": "2025-10-19", "size": "S", "leadTime": 126.0}, {"date": "2025-10-27", "size": "M", "leadTime": 57.0}, {"date": "2025-11-05", "size": "L", "leadTime": 124.0}, {"date": "2025-11-15", "size": "M", "leadTime": 75.0}, {"date": "2025-11-25", "size": "M", "leadTime": 89.0}, {"date": "2025-12-10", "size": "S", "leadTime": 44.0}];
+
+// Dane dzienne z pliku "Throughput Daily.xlsx" (data ukończenia, liczba dostarczonych elementów)
+const THROUGHPUT_DAILY = [["2025-01-07",0],["2025-01-08",2],["2025-01-09",10],["2025-01-10",3],["2025-01-11",0],["2025-01-12",0],["2025-01-13",2],["2025-01-14",3],["2025-01-15",7],["2025-01-16",0],["2025-01-17",0],["2025-01-18",0],["2025-01-19",0],["2025-01-20",5],["2025-01-21",2],["2025-01-22",0],["2025-01-23",0],["2025-01-24",0],["2025-01-25",0],["2025-01-26",0],["2025-01-27",1],["2025-01-28",1],["2025-01-29",0],["2025-01-30",5],["2025-01-31",4],["2025-02-01",0],["2025-02-02",0],["2025-02-03",7],["2025-02-04",0],["2025-02-05",2],["2025-02-06",2],["2025-02-07",12],["2025-02-08",0],["2025-02-09",0],["2025-02-10",1],["2025-02-11",0],["2025-02-12",0],["2025-02-13",2],["2025-02-14",12],["2025-02-15",0],["2025-02-16",0],["2025-02-17",1],["2025-02-18",0],["2025-02-19",0],["2025-02-20",3],["2025-02-21",11],["2025-02-22",0],["2025-02-23",0],["2025-02-24",6],["2025-02-25",0],["2025-02-26",0],["2025-02-27",6],["2025-02-28",7],["2025-03-01",0],["2025-03-02",0],["2025-03-03",2],["2025-03-04",0],["2025-03-05",0],["2025-03-06",3],["2025-03-07",5],["2025-03-08",0],["2025-03-09",0],["2025-03-10",1],["2025-03-11",0],["2025-03-12",0],["2025-03-13",9],["2025-03-14",7],["2025-03-15",0],["2025-03-16",0],["2025-03-17",3],["2025-03-18",0],["2025-03-19",0],["2025-03-20",4],["2025-03-21",10],["2025-03-22",0],["2025-03-23",0],["2025-03-24",1],["2025-03-25",0],["2025-03-26",0],["2025-03-27",5],["2025-03-28",1],["2025-03-29",0],["2025-03-30",0],["2025-03-31",2],["2025-04-01",0],["2025-04-02",0],["2025-04-03",2],["2025-04-04",11],["2025-04-05",0],["2025-04-06",0],["2025-04-07",1],["2025-04-08",0],["2025-04-09",0],["2025-04-10",5],["2025-04-11",2],["2025-04-12",0],["2025-04-13",0],["2025-04-14",1],["2025-04-15",0],["2025-04-16",0],["2025-04-17",4],["2025-04-18",7],["2025-04-19",0]];
 
 const STORAGE_KEY = 'leadTimeDashboard_v1';
 
@@ -590,9 +653,171 @@ document.getElementById('addForm').addEventListener('submit', (e)=>{
   e.target.reset();
 });
 
+/* ===================== Zakładki ===================== */
+document.querySelectorAll('.tab-btn').forEach(btn=>{
+  btn.addEventListener('click', ()=>{
+    document.querySelectorAll('.tab-btn').forEach(b=>b.classList.remove('active'));
+    document.querySelectorAll('.tab-panel').forEach(p=>p.classList.remove('active'));
+    btn.classList.add('active');
+    document.getElementById('tab-' + btn.dataset.tab).classList.add('active');
+    if(btn.dataset.tab === 'throughput' && !throughputChartsInitialized){
+      initThroughputCharts();
+    }
+  });
+});
+
 syncDateRangeSlider();
 initChart();
 refreshAll();
+
+/* ===================== Wykres XmR — tempo dostarczania ===================== */
+let throughputChartsInitialized = false;
+
+// Agreguj dane dzienne w okresy tygodniowe (7 dni), licząc od pierwszego dnia danych (07.01.2025).
+function buildWeeklyThroughput(daily){
+  const parsed = daily.map(([d,v]) => ({ date: new Date(d + 'T00:00:00Z'), value: v }));
+  parsed.sort((a,b)=> a.date - b.date);
+  const start = parsed[0].date;
+  const weeks = new Map();
+  parsed.forEach(({date, value})=>{
+    const offsetDays = Math.round((date - start) / 86400000);
+    const weekIdx = Math.floor(offsetDays / 7);
+    if(!weeks.has(weekIdx)){
+      const weekStart = new Date(start.getTime() + weekIdx*7*86400000);
+      weeks.set(weekIdx, { weekStart, sum: 0, count: 0 });
+    }
+    const w = weeks.get(weekIdx);
+    w.sum += value;
+    w.count += 1;
+  });
+  // Pomijamy niepełne tygodnie (mniej niż 7 dni danych), np. ostatni, niedokończony okres.
+  return [...weeks.values()]
+    .filter(w => w.count === 7)
+    .sort((a,b)=> a.weekStart - b.weekStart)
+    .map(w => ({ date: w.weekStart.toISOString().slice(0,10), value: w.sum }));
+}
+
+function controlLinePlugin(limits){
+  return {
+    id: 'controlLines_' + limits.key,
+    afterDraw(chart){
+      const yScale = chart.scales.y;
+      const xScale = chart.scales.x;
+      const ctx = chart.ctx;
+      ctx.save();
+      [
+        { val: limits.ucl, color: getComputedStyle(document.documentElement).getPropertyValue('--l-color').trim(), label: 'UCL' },
+        { val: limits.cl, color: getComputedStyle(document.documentElement).getPropertyValue('--p50').trim(), label: 'CL' },
+        { val: limits.lcl, color: getComputedStyle(document.documentElement).getPropertyValue('--s-color').trim(), label: 'LCL' },
+      ].forEach(line=>{
+        if(line.val == null) return;
+        const y = yScale.getPixelForValue(line.val);
+        ctx.beginPath();
+        ctx.setLineDash([6,5]);
+        ctx.strokeStyle = line.color;
+        ctx.lineWidth = 1.5;
+        ctx.moveTo(xScale.left, y);
+        ctx.lineTo(xScale.right, y);
+        ctx.stroke();
+        ctx.setLineDash([]);
+        ctx.fillStyle = line.color;
+        ctx.font = '11px sans-serif';
+        ctx.fillText(`${line.label}: ${line.val.toFixed(1)}`, xScale.right - 80, y - 4);
+      });
+      ctx.restore();
+    }
+  };
+}
+
+function mean(arr){ return arr.reduce((a,b)=>a+b,0) / arr.length; }
+
+function initThroughputCharts(){
+  throughputChartsInitialized = true;
+
+  const weekly = buildWeeklyThroughput(THROUGHPUT_DAILY);
+  const xValues = weekly.map(w=>w.value);
+  const labels = weekly.map(w=>w.date);
+
+  // Rozstęp ruchomy (Moving Range) pomiędzy kolejnymi tygodniami
+  const mrValues = xValues.slice(1).map((v,i)=> Math.abs(v - xValues[i]));
+
+  const xMean = mean(xValues);
+  const mrMean = mean(mrValues);
+
+  // Wykres X: korytarz CL ± 2,66 × średni moving range
+  const xUCL = xMean + 2.66 * mrMean;
+  const xLCL = Math.max(0, xMean - 2.66 * mrMean);
+
+  // Wykres mR: korytarz względem średniej MR̄ ± 3,27 × średni moving range
+  const mrUCL = mrMean + 3.27 * mrMean;
+  const mrLCL = Math.max(0, mrMean - 3.27 * mrMean);
+
+  document.getElementById('xCLval').textContent = xMean.toFixed(2);
+  document.getElementById('xUCLval').textContent = xUCL.toFixed(2);
+  document.getElementById('xLCLval').textContent = xLCL.toFixed(2);
+  document.getElementById('mrCLval').textContent = mrMean.toFixed(2);
+  document.getElementById('mrUCLval').textContent = mrUCL.toFixed(2);
+  document.getElementById('mrLCLval').textContent = mrLCL.toFixed(2);
+
+  new Chart(document.getElementById('xChart').getContext('2d'), {
+    type: 'line',
+    data: {
+      labels,
+      datasets: [{
+        label: 'Przepustowość tygodniowa (X)',
+        data: xValues,
+        borderColor: '#6ea8fe',
+        backgroundColor: '#6ea8fe',
+        pointRadius: 4,
+        tension: 0,
+      }]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      scales: {
+        x: { title:{display:true, text:'Tydzień od', color:'#9aa0ac'}, ticks:{color:'#9aa0ac'}, grid:{color:'#2e3240'} },
+        y: { title:{display:true, text:'Szt. / tydzień', color:'#9aa0ac'}, beginAtZero:true, ticks:{color:'#9aa0ac'}, grid:{color:'#2e3240'} }
+      },
+      plugins: { legend: { labels:{ color:'#e6e6e6' } } }
+    },
+    plugins: [controlLinePlugin({ key:'x', cl:xMean, ucl:xUCL, lcl:xLCL })]
+  });
+
+  new Chart(document.getElementById('mrChart').getContext('2d'), {
+    type: 'line',
+    data: {
+      labels: labels.slice(1),
+      datasets: [{
+        label: 'Rozstęp ruchomy (mR)',
+        data: mrValues,
+        borderColor: '#f2c94c',
+        backgroundColor: '#f2c94c',
+        pointRadius: 4,
+        tension: 0,
+      }]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      scales: {
+        x: { title:{display:true, text:'Tydzień od', color:'#9aa0ac'}, ticks:{color:'#9aa0ac'}, grid:{color:'#2e3240'} },
+        y: { title:{display:true, text:'|ΔX|', color:'#9aa0ac'}, beginAtZero:true, ticks:{color:'#9aa0ac'}, grid:{color:'#2e3240'} }
+      },
+      plugins: { legend: { labels:{ color:'#e6e6e6' } } }
+    },
+    plugins: [controlLinePlugin({ key:'mr', cl:mrMean, ucl:mrUCL, lcl:mrLCL })]
+  });
+
+  const tbody = document.getElementById('throughputTableBody');
+  tbody.innerHTML = weekly.map((w,i)=>`
+    <tr>
+      <td>${w.date}</td>
+      <td>${w.value}</td>
+      <td>${i===0 ? '-' : mrValues[i-1]}</td>
+    </tr>
+  `).join('');
+}
 </script>
 
 </body>
