@@ -369,6 +369,21 @@
 
 <div id="tab-roadmap" class="tab-panel">
   <div class="rm-card">
+    <h2>☁️ Współdzielenie planu (baza danych)</h2>
+    <div class="rm-row" id="rmSyncCfg">
+      <input type="text" id="rmDbUrl" placeholder="Supabase URL (https://xxx.supabase.co)" style="min-width:280px">
+      <input type="text" id="rmDbKey" placeholder="Supabase anon key" style="min-width:280px">
+      <button class="rm-btn sec" id="rmDbSaveCfg">Zapisz połączenie</button>
+    </div>
+    <div class="rm-row">
+      <button class="rm-btn" id="rmShare">Udostępnij plan (utwórz link)</button>
+      <input type="text" id="rmShareUrl" readonly placeholder="Link do planu pojawi się tutaj" style="min-width:320px">
+      <button class="rm-btn sec" id="rmCopy">Kopiuj</button>
+      <span class="rm-warn" id="rmSyncMsg"></span>
+    </div>
+    <div class="hint">Plan zapisuje się automatycznie w bazie i odświeża co 10 s. Każdy z linkiem może go oglądać i edytować (ostatni zapis wygrywa). Konfiguracja bazy: patrz <code>supabase-setup.sql</code>.</div>
+  </div>
+  <div class="rm-card">
     <h2>1. Kompetencje</h2>
     <div class="rm-row"><input type="text" id="rmCompName" placeholder="Nazwa kompetencji"><button class="rm-btn" id="rmAddComp">Dodaj</button></div>
     <div class="rm-row" id="rmComps"></div>
@@ -1024,7 +1039,7 @@ function defaultState(){
 let S;
 try { S = JSON.parse(localStorage.getItem(KEY)); } catch(e){}
 if(!S || !S.teams) S = defaultState();
-const save = () => { try{ localStorage.setItem(KEY, JSON.stringify(S)); }catch(e){} };
+const save = noPush => { try{ localStorage.setItem(KEY, JSON.stringify(S)); }catch(e){} if(noPush !== true) schedulePush(); };
 
 function estFor(init, comp){
   const k = init.id + '|' + comp;
@@ -1261,7 +1276,67 @@ $('rmAddInit').onclick = () => {
 $('rmCalStart').onchange = e => { if(e.target.value){ S.calStart = e.target.value; renderCap(); run(); } };
 $('rmPct').value = S.pct; $('rmSims').value = S.sims;
 $('rmPct').onchange = $('rmSims').onchange = $('rmRun').onclick = run;
+
+/* ---------- Współdzielenie (Supabase RPC) ---------- */
+const DEFAULT_DB = {url:'', key:''}; // opcjonalnie wpisz stałe wartości, by odwiedzający nie musieli konfigurować
+let DB; try { DB = JSON.parse(localStorage.getItem('rmDb.v1')) || {}; } catch(e){ DB = {}; }
+DB.url = DB.url || DEFAULT_DB.url; DB.key = DB.key || DEFAULT_DB.key;
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+let planId = new URLSearchParams(location.search).get('plan');
+if(planId && !UUID.test(planId)) planId = null;
+let quiet = false;
+let ready = !planId; // nie nadpisuj bazy, zanim pobierzemy istniejący plan
+let remoteVer = null, pushTimer = null, pushing = false, dirty = false;
+const msg = t => { $('rmSyncMsg').textContent = t || ''; };
+const dbOk = () => /^(https:\/\/|http:\/\/(localhost|127\.0\.0\.1)[:\/])[^\s/]+/.test(DB.url||'') && !!DB.key;
+async function rpc(fn, body){
+  const r = await fetch(DB.url.replace(/\/+$/,'') + '/rest/v1/rpc/' + fn, {
+    method:'POST', headers:{'Content-Type':'application/json', apikey:DB.key, Authorization:'Bearer ' + DB.key}, body:JSON.stringify(body)});
+  if(!r.ok) throw new Error(fn + ': HTTP ' + r.status);
+  return r.json();
+}
+function shareLink(){ const u = new URL(location.href); u.search = '?plan=' + planId; u.hash = ''; return u.toString(); }
+function schedulePush(){
+  if(!planId || !dbOk() || !ready || quiet) return;
+  dirty = true; clearTimeout(pushTimer); pushTimer = setTimeout(push, 800);
+}
+async function push(){
+  if(pushing){ schedulePush(); return; }
+  pushing = true; dirty = false;
+  try { remoteVer = await rpc('upsert_plan', {p_id:planId, p_data:S}); msg('Zapisano w bazie ' + new Date().toLocaleTimeString()); }
+  catch(e){ msg('Błąd zapisu: ' + e.message); dirty = true; }
+  pushing = false;
+}
+async function pull(){
+  if(!planId || !dbOk() || dirty || pushing) return;
+  const first = !ready;
+  const ae = document.activeElement;
+  if(!first && ae && $('tab-roadmap').contains(ae) && /INPUT|SELECT/.test(ae.tagName)) return;
+  try {
+    const r = await rpc('get_plan', {p_id:planId});
+    if(!r || !r.data){ if(first){ ready = true; await push(); } return; }
+    ready = true;
+    if(Date.parse(r.updated_at) === Date.parse(remoteVer)) return;
+    remoteVer = r.updated_at;
+    if(r.data.teams && r.data.inits){ S = r.data; ready = true; quiet = true; try{ renderAll(); } finally { quiet = false; } save(true); msg('Pobrano aktualny plan ' + new Date().toLocaleTimeString()); }
+  } catch(e){ msg('Błąd odczytu: ' + e.message); }
+}
+$('rmDbUrl').value = DB.url || ''; $('rmDbKey').value = DB.key || '';
+if(planId && dbOk()) $('rmShareUrl').value = shareLink();
+$('rmDbSaveCfg').onclick = () => {
+  DB = {url:$('rmDbUrl').value.trim(), key:$('rmDbKey').value.trim()};
+  try{ localStorage.setItem('rmDb.v1', JSON.stringify(DB)); }catch(e){}
+  msg(dbOk() ? 'Zapisano ustawienia połączenia.' : 'Podaj poprawny URL (https) i klucz.');
+};
+$('rmShare').onclick = async () => {
+  if(!dbOk()){ msg('Najpierw skonfiguruj połączenie z bazą.'); return; }
+  if(!planId){ planId = crypto.randomUUID(); ready = true; history.replaceState(null, '', shareLink()); }
+  await push(); $('rmShareUrl').value = shareLink();
+};
+$('rmCopy').onclick = () => { const v = $('rmShareUrl').value; if(v) navigator.clipboard?.writeText(v).then(() => msg('Skopiowano link.')); };
 renderAll();
+pull();
+setInterval(pull, 10000);
 })();
 </script>
 
