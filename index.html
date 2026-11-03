@@ -1278,7 +1278,7 @@ $('rmPct').value = S.pct; $('rmSims').value = S.sims;
 $('rmPct').onchange = $('rmSims').onchange = $('rmRun').onclick = run;
 
 /* ---------- Współdzielenie (Supabase RPC) ---------- */
-const DEFAULT_DB = {url:'', key:''}; // opcjonalnie wpisz stałe wartości, by odwiedzający nie musieli konfigurować
+const DEFAULT_DB = {url:'https://urqlnkqownxetrkqgwxw.supabase.co', key:'sb_publishable_ieTladr57Pkti9zlsFtcfA_U4EqwBEp'}; // klucz publishable jest publiczny z założenia; bezpieczeństwo zapewnia RPC z supabase-setup.sql
 let DB; try { DB = JSON.parse(localStorage.getItem('rmDb.v1')) || {}; } catch(e){ DB = {}; }
 DB.url = DB.url || DEFAULT_DB.url; DB.key = DB.key || DEFAULT_DB.key;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
